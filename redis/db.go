@@ -24,12 +24,9 @@ type DB struct {
 // Communication is done via a unix socket.
 // Set "port" to "0" in the config to avoid conflicts with allocated ports.
 func New(config map[string]string) (result *DB, err error) {
-	dir, ok := config["dir"]
-	if !ok {
-		dir, err = ioutil.TempDir("", "redis")
-		if err != nil {
-			return
-		}
+	dir, err := ioutil.TempDir("", "redis")
+	if err != nil {
+		return
 	}
 
 	ipc := fmt.Sprintf("%s/redis-%d.socket", dir, rand.Uint32())
@@ -111,10 +108,11 @@ func NewTestDB() (result *DB, err error) {
 // Dial connects directly to the Redis database instance.
 func (db *DB) Dial() (result Conn, err error) {
 	conn, err := net.Dial("unix", db.ipc)
-	if err == nil {
-		result = newConn(conn)
+	if err != nil {
+		return
 	}
 
+	result = newConn(conn)
 	return
 }
 

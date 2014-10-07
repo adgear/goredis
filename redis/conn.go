@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,9 @@ var OK interface{} = "+OK"
 // Conn implements a client connection to the Redis database.
 type Conn struct {
 	conn net.Conn
+
+	// Wait indicates that LOADING errors from Redis will try again.
+	Wait bool
 
 	reader *bufio.Reader
 	writer *bufio.Writer
@@ -204,7 +208,7 @@ func (conn *Conn) getReply() (result interface{}, err error) {
 
 		result = line[1:]
 	case '-':
-		err = fmt.Errorf("redis returned an error: %s", line[1:])
+		result, err = line[1:], fmt.Errorf("redis returned an error: %s", line[1:])
 	case ':':
 		result, err = strconv.ParseInt(line[1:], 10, 64)
 	case '$':
@@ -253,14 +257,27 @@ func (conn *Conn) getReply() (result interface{}, err error) {
 // Do sends the specified command (and arguments) to the Redis database and returns the received result.
 // The Redis command reference (http://redis.io/commands) lists the available commands.
 func (conn *Conn) Do(command string, args ...interface{}) (result interface{}, err error) {
-	if err = conn.putCommand(command, args); err != nil {
-		return
+	for {
+		if err = conn.putCommand(command, args); err != nil {
+			break
+		}
+
+		if err = conn.writer.Flush(); err != nil {
+			break
+		}
+
+		result, err = conn.getReply()
+		if err == nil {
+			break
+		}
+
+		text, ok := result.(string)
+		if !ok || !conn.Wait || !strings.HasPrefix(text, "LOADING") {
+			break
+		}
+
+		time.Sleep(time.Millisecond * 10)
 	}
 
-	if err = conn.writer.Flush(); err != nil {
-		return
-	}
-
-	result, err = conn.getReply()
 	return
 }
