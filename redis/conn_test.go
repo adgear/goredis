@@ -99,7 +99,7 @@ func TestCommands(t *testing.T) {
 
 	defer db.Close()
 
-	c, err := Dial(db.Network(), db.String())
+	c, err := db.Dial()
 	if err != nil {
 		t.Fatal(err)
 	}

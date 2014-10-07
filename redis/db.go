@@ -3,7 +3,10 @@
 package redis
 
 import (
+	"fmt"
 	"io/ioutil"
+	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"syscall"
@@ -12,55 +15,107 @@ import (
 
 // DB controls a Redis database instance.
 type DB struct {
-	cmd  *exec.Cmd
-	path string
+	cmd *exec.Cmd
+	dir string
+	ipc string
 }
 
-// NewTestDB creates a temporary Redis database instance in a temporary directory that can be used for testing.
-// Communication is done via an unix socket to avoid conflicts with allocated ports.
-func NewTestDB() (result *DB, err error) {
-	path, err := ioutil.TempDir("", "redis")
-	if err != nil {
-		return
+// New creates a local Redis database instance.
+// Communication is done via a unix socket.
+// Set "port" to "0" in the config to avoid conflicts with allocated ports.
+func New(config map[string]string) (result *DB, err error) {
+	dir, ok := config["dir"]
+	if !ok {
+		dir, err = ioutil.TempDir("", "redis")
+		if err != nil {
+			return
+		}
 	}
 
-	filename := path + "/redis.socket"
-	cmd := exec.Command("redis-server", "--port", "0", "--unixsocket", filename, "--dir", path)
+	ipc := fmt.Sprintf("%s/redis-%d.socket", dir, rand.Uint32())
+	config["unixsocket"] = ipc
+
+	cmd := exec.Command("redis-server", "-")
 
 	db := &DB{
-		cmd:  cmd,
-		path: path,
+		cmd: cmd,
+		dir: dir,
+		ipc: ipc,
 	}
 
 	defer func() {
 		db.Close()
 	}()
 
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return
+	}
+
 	err = cmd.Start()
 	if err != nil {
 		return
 	}
 
+	for key, value := range config {
+		_, err = fmt.Fprintf(stdin, "%s %s\n", key, value)
+		if err != nil {
+			return
+		}
+	}
+
+	stdin.Close()
+
 	for i := 0; i != 100; i++ {
-		if _, err = os.Stat(filename); err == nil {
+		if _, err = os.Stat(ipc); err == nil {
 			break
 		}
 
 		time.Sleep(time.Millisecond * 10)
 	}
 
+	conn, err := db.Dial()
+	if err != nil {
+		return
+	}
+
+	reply, err := conn.Do("QUIT")
+	if err != nil {
+		return
+	}
+
+	if reply != OK {
+		return
+	}
+
 	result, db = db, nil
 	return
 }
 
-// Network returns the network name that should be used to dial the server.
-func (db *DB) Network() string {
-	return "unix"
+// NewTestDB creates a temporary Redis database instance in a temporary directory that can be used for testing.
+func NewTestDB() (result *DB, err error) {
+	dir, err := ioutil.TempDir("", "redis")
+	if err != nil {
+		return
+	}
+
+	config := map[string]string{
+		"port": "0",
+		"dir":  dir,
+	}
+
+	result, err = New(config)
+	return
 }
 
-// String returns the address that should be used to dial the server.
-func (db *DB) String() string {
-	return db.path + "/redis.socket"
+// Dial connects directly to the Redis database instance.
+func (db *DB) Dial() (result Conn, err error) {
+	conn, err := net.Dial("unix", db.ipc)
+	if err == nil {
+		result = newConn(conn)
+	}
+
+	return
 }
 
 // Close terminates the Redis database instance and removes any temporary data that was created.
@@ -79,8 +134,8 @@ func (db *DB) Close() {
 		}
 	}
 
-	if db.path != "" {
-		err := os.RemoveAll(db.path)
+	if db.dir != "" {
+		err := os.RemoveAll(db.dir)
 		if err != nil {
 			panic(err)
 		}
