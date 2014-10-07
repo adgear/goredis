@@ -254,19 +254,19 @@ func (conn *Conn) getReply() (result interface{}, err error) {
 	return
 }
 
-// Do sends the specified command (and arguments) to the Redis database and returns the received result.
+// Do sends the specified command (and arguments) to the Redis instance and decodes the reply.
 // The Redis command reference (http://redis.io/commands) lists the available commands.
 func (conn *Conn) Do(command string, args ...interface{}) (result interface{}, err error) {
 	for {
-		if err = conn.putCommand(command, args); err != nil {
+		if err = conn.Put(command, args...); err != nil {
 			break
 		}
 
-		if err = conn.writer.Flush(); err != nil {
+		if err = conn.Flush(); err != nil {
 			break
 		}
 
-		result, err = conn.getReply()
+		result, err = conn.Get()
 		if err == nil {
 			break
 		}
@@ -279,5 +279,24 @@ func (conn *Conn) Do(command string, args ...interface{}) (result interface{}, e
 		time.Sleep(time.Millisecond * 10)
 	}
 
+	return
+}
+
+// Put send the specified command (and arguments) to the Redis instance.
+// The Redis command reference (http://redis.io/commands) lists the available commands.
+func (conn *Conn) Put(command string, args ...interface{}) (err error) {
+	err = conn.putCommand(command, args)
+	return
+}
+
+// Flush sends any remaining buffered data.
+func (conn *Conn) Flush() (err error) {
+	err = conn.writer.Flush()
+	return
+}
+
+// Get decodes the reply of the Redis instance for a command that was sent.
+func (conn *Conn) Get() (result interface{}, err error) {
+	result, err = conn.getReply()
 	return
 }
