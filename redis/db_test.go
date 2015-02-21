@@ -69,10 +69,6 @@ func BenchmarkPipeline(b *testing.B) {
 		}
 	}
 
-	if err = c.Flush(); err != nil {
-		b.Fail()
-	}
-
 	if n := <-done; n != b.N {
 		b.Fail()
 	}

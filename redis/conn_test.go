@@ -77,17 +77,17 @@ var testCommands = []struct {
 	},
 	{
 		[]interface{}{"SET", "obj", struct {
-			i int
-			b bool
+			N int
+			B bool
 		}{
-			i: 1,
-			b: true,
+			N: 1,
+			B: true,
 		}},
 		OK,
 	},
 	{
 		[]interface{}{"GET", "obj"},
-		[]byte("{1 true}"),
+		[]byte(`{"N":1,"B":true}`),
 	},
 }
 

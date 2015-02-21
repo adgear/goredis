@@ -23,7 +23,7 @@ type DB struct {
 // New creates a local Redis database instance.
 // Communication is done via a unix socket.
 // Set "port" to "0" in the config to avoid conflicts with allocated ports.
-func New(config map[string]string) (result *DB, err error) {
+func New(path string, config map[string]string) (result *DB, err error) {
 	dir, err := ioutil.TempDir("", "redis")
 	if err != nil {
 		return
@@ -32,7 +32,14 @@ func New(config map[string]string) (result *DB, err error) {
 	ipc := fmt.Sprintf("%s/redis-%d.socket", dir, rand.Uint32())
 	config["unixsocket"] = ipc
 
-	cmd := exec.Command("redis-server", "-")
+	if path == "" {
+		path = os.Getenv("REDIS")
+		if path == "" {
+			path = "redis-server"
+		}
+	}
+
+	cmd := exec.Command(path, "-")
 
 	db := &DB{
 		cmd: cmd,
@@ -101,18 +108,23 @@ func NewTestDB() (result *DB, err error) {
 		"dir":  dir,
 	}
 
-	result, err = New(config)
+	result, err = New("", config)
 	return
 }
 
 // Dial connects directly to the Redis database instance.
-func (db *DB) Dial() (result Conn, err error) {
+func (db *DB) Dial() (result *Conn, err error) {
 	conn, err := net.Dial("unix", db.ipc)
 	if err != nil {
 		return
 	}
 
-	result = newConn(conn)
+	result = &Conn{
+		conn:    conn,
+		encoder: NewEncoder(conn),
+		decoder: NewDecoder(conn),
+	}
+
 	return
 }
 
