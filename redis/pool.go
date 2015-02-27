@@ -52,6 +52,7 @@ func (pool *Pool) PrintState() {
 
 func (pool *Pool) get() (*Conn, error) {
 	pool.Lock()
+	defer pool.Unlock()
 	if len(pool.free) == 0 {
 		if err := pool.add(); err != nil {
 			return nil, err
@@ -59,12 +60,12 @@ func (pool *Pool) get() (*Conn, error) {
 	}
 	conn := pool.free[0]
 	pool.free = pool.free[1:]
-	pool.Unlock()
 	return conn, nil
 }
 
 func (pool *Pool) release(conn *Conn) {
 	pool.Lock()
+	defer pool.Unlock()
 	if len(pool.free) > (len(pool.connections)/2)+1 {
 		for i, c := range pool.connections {
 			if c == conn {
@@ -76,7 +77,6 @@ func (pool *Pool) release(conn *Conn) {
 	} else {
 		pool.free = append(pool.free, conn)
 	}
-	pool.Unlock()
 }
 
 func (pool *Pool) add() error {

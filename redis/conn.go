@@ -190,7 +190,6 @@ func (conn *Conn) getLine() (result string, err error) {
 
 func (conn *Conn) getReply() (result interface{}, err error) {
 	line, err := conn.getLine()
-	//fmt.Println(line)
 	if err != nil {
 		return
 	}
@@ -286,7 +285,6 @@ func (conn *Conn) Do(command string, args ...interface{}) (result interface{}, e
 // Put send the specified command (and arguments) to the Redis instance.
 // The Redis command reference (http://redis.io/commands) lists the available commands.
 func (conn *Conn) Put(command string, args ...interface{}) (err error) {
-	//fmt.Println(command, args[:])
 	err = conn.putCommand(command, args)
 	return
 }
