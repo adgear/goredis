@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/datacratic/go-metrics"
 	"github.com/datacratic/goredis/redis"
-	"github.com/rcrowley/go-metrics"
 	"net"
 	"os"
 	"os/signal"
