@@ -39,16 +39,19 @@ func BenchmarkPipeline(b *testing.B) {
 
 	defer db.Close()
 
-	c, err := db.Dial()
+	conn, err := db.dial()
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	done := make(chan int)
 
+	encoder := NewEncoder(conn)
+	decoder := NewDecoder(conn)
+
 	go func() {
 		for i := 0; i < b.N; i++ {
-			result, err := c.Get()
+			result, err := decoder.Decode()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -64,7 +67,7 @@ func BenchmarkPipeline(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := c.Put("LPUSH", "queue", i); err != nil {
+		if err := encoder.Encode("LPUSH", "queue", i); err != nil {
 			b.Fatal(err)
 		}
 	}

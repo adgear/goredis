@@ -13,6 +13,10 @@ import (
 // OK represents the +OK string returned by many Redis commands.
 var OK interface{} = "+OK"
 
+var MOVED interface{} = "-MOVED"
+
+var ASK interface{} = "-ASK"
+
 type Decoder struct {
 	reader *bufio.Reader
 }

@@ -5,6 +5,7 @@ package redis
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -112,17 +113,14 @@ func NewTestDB() (result *DB, err error) {
 	return
 }
 
+func (db *DB) dial() (net.Conn, error) {
+	return net.Dial("unix", db.ipc)
+}
+
 // Dial connects directly to the Redis database instance.
 func (db *DB) Dial() (result *Conn, err error) {
-	conn, err := net.Dial("unix", db.ipc)
-	if err != nil {
-		return
-	}
-
 	result = &Conn{
-		conn:    conn,
-		encoder: NewEncoder(conn),
-		decoder: NewDecoder(conn),
+		db: db,
 	}
 
 	return
@@ -140,7 +138,12 @@ func (db *DB) Close() {
 		}
 
 		if err := db.cmd.Wait(); err != nil {
-			panic(err)
+			exit, ok := err.(*exec.ExitError)
+			if !ok {
+				panic(err)
+			}
+
+			log.Printf("redis-server: %s\n", exit)
 		}
 	}
 
