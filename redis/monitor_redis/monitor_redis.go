@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/datacratic/go-metrics"
-	"github.com/datacratic/goredis/redis"
 	"net"
 	"os"
 	"os/signal"
@@ -12,6 +10,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/datacratic/go-metrics"
+	"github.com/datacratic/goredis/redis"
 )
 
 func main() {
@@ -36,7 +37,7 @@ func main() {
 	}
 
 	keyAddressPairs := map[string]string{}
-	connections := map[string]redis.Conn{}
+	connections := map[string]*redis.Conn{}
 
 	for i := 0; i < len(addresses); i++ {
 		key := addresses[i]
@@ -46,7 +47,7 @@ func main() {
 		fmt.Println(key, address)
 
 		var err error
-		connections[key], err = redis.Dial("tcp", address)
+		connections[key] = redis.Dial("tcp", address)
 		if err != nil {
 			panic("connection error to " + key + " " + address)
 		}

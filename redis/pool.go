@@ -80,11 +80,8 @@ func (pool *Pool) release(conn *Conn) {
 }
 
 func (pool *Pool) add() error {
-	conn, err := Dial(pool.network, pool.address)
-	if err != nil {
-		return err
-	}
-	pool.connections = append(pool.connections, &conn)
-	pool.free = append(pool.free, &conn)
+	conn := Dial(pool.network, pool.address)
+	pool.connections = append(pool.connections, conn)
+	pool.free = append(pool.free, conn)
 	return nil
 }
