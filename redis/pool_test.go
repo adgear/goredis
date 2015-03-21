@@ -5,14 +5,12 @@ package redis
 import (
 	"fmt"
 	"testing"
-	//	"time"
 )
 
 func TestPool(t *testing.T) {
-
-	redis, err := New(map[string]string{"port": "6366"})
+	redis, err := New("", map[string]string{"port": "6366"})
 	if err != nil {
-		fmt.Println(err)
+		t.Fatal(err)
 	}
 
 	pool, err := NewPool(0, "tcp", "127.0.0.1:6366")

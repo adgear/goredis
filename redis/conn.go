@@ -3,6 +3,7 @@
 package redis
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -27,8 +28,10 @@ type Conn struct {
 	MaximumConnectionRetries  int
 	RetryTimeout              time.Duration
 
+	db  dialer
+	lua map[string]string
+
 	feed chan *Request
-	db   dialer
 	conn *net.Conn
 	once sync.Once
 	wg   sync.WaitGroup
@@ -87,7 +90,7 @@ func (conn *Conn) process() {
 		var decoder *Decoder
 
 		// try to connect for the first time
-		fd, err := conn.db.dial()
+		fd, err := conn.connect()
 
 		// when in fail state, all pending commands are purged
 		fail := false
@@ -123,7 +126,7 @@ func (conn *Conn) process() {
 
 					n++
 					time.Sleep(time.Duration(int64(n) * int64(timeout)))
-					fd, err = conn.db.dial()
+					fd, err = conn.connect()
 					c.err = err
 					continue
 				}
@@ -164,6 +167,22 @@ func (conn *Conn) process() {
 	return
 }
 
+// LuaScript loads a script into the script cache.
+func (conn *Conn) LuaScript(code string) (id string, err error) {
+	result, err := conn.Do("SCRIPT", "LOAD", code)
+	if err != nil {
+		return
+	}
+
+	if conn.lua == nil {
+		conn.lua = make(map[string]string)
+	}
+
+	id = string(result.([]byte))
+	conn.lua[id] = code
+	return
+}
+
 // Close tears down the connection to the Redis database.
 func (conn *Conn) Close() {
 	if conn == nil {
@@ -191,6 +210,29 @@ func (conn *Conn) Send(request *Request) error {
 	conn.feed <- request
 	<-request.done
 	return request.err
+}
+
+func (conn *Conn) connect() (result net.Conn, err error) {
+	result, err = conn.db.dial()
+	if err != nil {
+		return
+	}
+
+	// load scripts
+	for key, code := range conn.lua {
+		var reply interface{}
+		reply, err = conn.Do("SCRIPT", "LOAD", code)
+		if err != nil {
+			return
+		}
+
+		id := reply.(string)
+		if id != key {
+			err = fmt.Errorf("script SHA1 doesn't match '%s' vs. '%s'", id, key)
+		}
+	}
+
+	return
 }
 
 // Dial connects to a Redis database instance at the specified address on the named network.

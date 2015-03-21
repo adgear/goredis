@@ -30,6 +30,8 @@ type Client struct {
 	MaximumConnectionRetries  int
 	RetryTimeout              time.Duration
 
+	lua map[string]string
+
 	state atomic.Value
 	mu    sync.Mutex
 	once  sync.Once
@@ -152,6 +154,47 @@ func (client *Client) Send(request *Request) (err error) {
 	return
 }
 
+// LuaScript loads a script into the script cache.
+func (client *Client) LuaScript(code string) (id string, err error) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	done := make(chan func() (interface{}, error))
+
+	// load the script on all known connections
+	for name := range client.nodes {
+		name := name
+		go func() {
+			node := client.nodes[name]
+			result, err := node.LuaScript(code)
+			done <- func() (interface{}, error) {
+				return result, err
+			}
+		}()
+	}
+
+	// wait for the result
+	for i, n := 0, len(client.nodes); i < n; i++ {
+		f := <-done
+		var result interface{}
+		result, err = f()
+		if err == nil {
+			key := result.(string)
+			if id == "" || id == key {
+				id = key
+			} else {
+				err = fmt.Errorf("script SHA1 doesn't match '%s' vs. '%s'", id, key)
+			}
+		}
+	}
+
+	if id != "" {
+		err = nil
+	}
+
+	return
+}
+
 // Close tears down the connection to the Redis database or cluster.
 func (client *Client) Close() {
 	if client == nil {
@@ -166,13 +209,17 @@ func (client *Client) Close() {
 	}
 
 	client.nodes = nil
-	//client.state.Store(&mapping{
-	//	closed: true,
-	//})
-	//log.Println("closed", client.state)
+	client.state.Store(&mapping{
+		closed: true,
+	})
 }
 
 func (client *Client) connect(address string) *Conn {
+	lua := make(map[string]string)
+	for key, code := range client.lua {
+		lua[key] = code
+	}
+
 	return &Conn{
 		MaximumConcurrentRequests: client.MaximumConcurrentRequests,
 		MaximumPendingRequests:    client.MaximumPendingRequests,
@@ -181,6 +228,7 @@ func (client *Client) connect(address string) *Conn {
 		db: dialerFunc(func() (net.Conn, error) {
 			return net.Dial("tcp", address)
 		}),
+		lua: lua,
 	}
 }
 
@@ -224,7 +272,6 @@ func (client *Client) update(slot int, node *Conn) (state *mapping, err error) {
 		state.slots[slot] = node
 
 		client.state.Store(state)
-		log.Println("update", client.state)
 		return
 	}
 
@@ -314,6 +361,5 @@ func (client *Client) reconfigure(last *mapping, node *Conn) (next *mapping, err
 	}
 
 	client.state.Store(next)
-	log.Println("reconfigured", client.state)
 	return
 }
