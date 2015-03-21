@@ -8,17 +8,17 @@ import (
 	"time"
 )
 
-// DefaultMaximumConcurrentRequests defines the default maximum number of concurrent in-flight requests that can be sent to the Redis database.yy
-var DefaultMaximumConcurrentRequests int = 1000
+// DefaultMaximumConcurrentRequests defines the default maximum number of concurrent in-flight requests that can be sent to the Redis database.
+var DefaultMaximumConcurrentRequests = 1000
 
 // DefaultMaximumPendingRequests defines the default maximum number of requests that can be queued before blocking.
-var DefaultMaximumPendingRequests int = 1000
+var DefaultMaximumPendingRequests = 1000
 
 // DefaultMaximumConnectionRetries defines the number of times the client will try to connect to the Redis database before giving up.
-var DefaultMaximumConnectionRetries int = 3
+var DefaultMaximumConnectionRetries = 3
 
 // DefaultRetryTimeout defines the duration multiplicatively increased to provide exponential backoff delay when connecting to the Redis database.
-var DefaultRetryTimeout time.Duration = time.Second
+var DefaultRetryTimeout = time.Second
 
 // Conn implements a client connection to the Redis database.
 type Conn struct {
@@ -164,7 +164,7 @@ func (conn *Conn) process() {
 	return
 }
 
-// Close closes the connection.
+// Close tears down the connection to the Redis database.
 func (conn *Conn) Close() {
 	if conn == nil {
 		return
@@ -174,7 +174,7 @@ func (conn *Conn) Close() {
 	conn.wg.Wait()
 }
 
-// Do sends the specified command and arguments to the Redis instance and waits to decode the reply.
+// Do executes the specified command (with optional arguments) to the Redis instance and waits to decode the reply.
 func (conn *Conn) Do(name string, args ...interface{}) (result interface{}, err error) {
 	request := NewRequest(name, args...)
 	if err = conn.Send(request); err == nil {
@@ -184,6 +184,7 @@ func (conn *Conn) Do(name string, args ...interface{}) (result interface{}, err 
 	return
 }
 
+// Send sends the specified request to the Redis instance and waits for the reply.
 func (conn *Conn) Send(request *Request) error {
 	conn.once.Do(conn.process)
 	request.done = make(chan struct{})
@@ -193,29 +194,19 @@ func (conn *Conn) Send(request *Request) error {
 }
 
 // Dial connects to a Redis database instance at the specified address on the named network.
-// See net.Dial for more details.
-func Dial(network, address string) (result *Conn, err error) {
-	f := func() (net.Conn, error) {
-		return net.Dial(network, address)
+func Dial(network, address string) *Conn {
+	return &Conn{
+		db: dialerFunc(func() (net.Conn, error) {
+			return net.Dial(network, address)
+		}),
 	}
-
-	result = &Conn{
-		db: dialerFunc(f),
-	}
-
-	return
 }
 
 // DialTimeout connects to a Redis database instance at the specified address on the named network with a timeout.
-// See net.DialTimeout for more details.
-func DialTimeout(network, address string, timeout time.Duration) (result *Conn, err error) {
-	f := func() (net.Conn, error) {
-		return net.DialTimeout(network, address, timeout)
+func DialTimeout(network, address string, timeout time.Duration) *Conn {
+	return &Conn{
+		db: dialerFunc(func() (net.Conn, error) {
+			return net.DialTimeout(network, address, timeout)
+		}),
 	}
-
-	result = &Conn{
-		db: dialerFunc(f),
-	}
-
-	return
 }

@@ -4,6 +4,7 @@ package redis
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -13,14 +14,13 @@ import (
 // OK represents the +OK string returned by many Redis commands.
 var OK interface{} = "+OK"
 
-var MOVED interface{} = "-MOVED"
-
-var ASK interface{} = "-ASK"
-
+// Decoder implements the decoding part of the Redis serialization protocol.
 type Decoder struct {
+	// reader adds some buffering to the input.
 	reader *bufio.Reader
 }
 
+// NewDecoder creates a RESP decoder from the specified reader source.
 func NewDecoder(reader io.Reader) (result *Decoder) {
 	result = &Decoder{
 		reader: bufio.NewReader(reader),
@@ -115,14 +115,21 @@ func (decoder *Decoder) get() (result interface{}, err error) {
 
 		result = reply
 	default:
-		err = fmt.Errorf("redis returned '%s'", line)
+		result, err = line, fmt.Errorf("redis returned '%s'", line)
 	}
 
 	return
 }
 
-// Get decodes the reply of the Redis instance for a command that was sent.
+// Decode unmarshal the reply of the Redis instance for a command that was sent.
 func (decoder *Decoder) Decode() (result interface{}, err error) {
 	result, err = decoder.get()
+	return
+}
+
+// Unmarshal decodes the reply from the buffer.
+func Unmarshal(data []byte) (result interface{}, err error) {
+	buffer := bytes.NewBuffer(data)
+	result, err = NewDecoder(buffer).Decode()
 	return
 }

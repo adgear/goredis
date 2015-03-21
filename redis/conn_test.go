@@ -3,9 +3,57 @@
 package redis
 
 import (
+	"fmt"
+	"net"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 )
+
+type noDB struct{}
+
+func (db *noDB) dial() (conn net.Conn, err error) {
+	err = fmt.Errorf("no db")
+	return
+}
+
+func TestNoConnection(t *testing.T) {
+	conn := &Conn{
+		db:           new(noDB),
+		RetryTimeout: time.Millisecond,
+	}
+
+	if result, err := conn.Do("PING"); err == nil || result != nil {
+		t.Fatal(err, result)
+	}
+}
+
+func TestConnectionDropped(t *testing.T) {
+	db := new(mockDB)
+	conn := &Conn{db: db}
+
+	db.result.WriteString("+PONG\r\n")
+	if result, err := conn.Do("PING"); err != nil || result != "PONG" {
+		t.Fatal(err, result)
+	}
+
+	db.result.WriteString("+PONG\r\n")
+	if result, err := conn.Do("PING"); err != nil || result != "PONG" {
+		t.Fatal(err, result)
+	}
+
+	db.err = fmt.Errorf("failure")
+	if result, err := conn.Do("PING"); err == nil || result != nil {
+		t.Fatal(err, result)
+	}
+
+	db.result.WriteString("+PONG\r\n")
+	db.err = nil
+	if result, err := conn.Do("PING"); err != nil || result != "PONG" {
+		t.Fatal(err, result)
+	}
+}
 
 var testCommands = []struct {
 	args     []interface{}
@@ -99,15 +147,13 @@ func TestCommands(t *testing.T) {
 
 	defer db.Close()
 
-	c, err := db.Dial()
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn := db.Dial()
+	defer conn.Close()
 
 	for i, cmd := range testCommands {
 		t.Logf("%d: '%v'\n", i, cmd.args)
 
-		result, err := c.Do(cmd.args[0].(string), cmd.args[1:]...)
+		result, err := conn.Do(cmd.args[0].(string), cmd.args[1:]...)
 		if err != nil {
 			t.Errorf("unexpected result '%s'", err)
 			continue
@@ -118,8 +164,54 @@ func TestCommands(t *testing.T) {
 		}
 	}
 
-	result, err := c.Do("LPUSH", "obj", "bad")
+	result, err := conn.Do("LPUSH", "obj", "bad")
 	if err == nil {
 		t.Errorf("unexpected result '%v'", result)
 	}
+}
+
+func BenchmarkConn(b *testing.B) {
+	db, err := NewTestDB()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	defer db.Close()
+
+	conn := &Conn{
+		db: db,
+	}
+
+	defer conn.Close()
+	var wg sync.WaitGroup
+
+	// create enough workers to process everything
+	n := 1000
+	send := make(chan func(), b.N)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			for f := range send {
+				f()
+			}
+
+			wg.Done()
+		}()
+	}
+
+	b.ResetTimer()
+
+	// use the workers to perform all requests
+	for i := 0; i < b.N; i++ {
+		k := i
+		send <- func() {
+			_, err := conn.Do("LPUSH", "queue", k)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	close(send)
+	wg.Wait()
 }

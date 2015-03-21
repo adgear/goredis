@@ -12,15 +12,13 @@ func BenchmarkDB(b *testing.B) {
 
 	defer db.Close()
 
-	c, err := db.Dial()
-	if err != nil {
-		b.Fatal(err)
-	}
+	conn := db.Dial()
+	defer conn.Close()
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		result, err := c.Do("LPUSH", "queue", i)
+		result, err := conn.Do("LPUSH", "queue", i)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -44,7 +42,15 @@ func BenchmarkPipeline(b *testing.B) {
 		b.Fatal(err)
 	}
 
+	defer conn.Close()
+
 	done := make(chan int)
+
+	// This benchmark tries to find the maximum speed that we can get with pipelining
+	// over the unix socket. It doesn't have bounds on in-flight and thus, simply
+	// sends everything at once while receiving. The result here can be used to give
+	// an idea of the speed that the Conn and the Client can reach when the number
+	// of concurrent requests is large enough for the test.
 
 	encoder := NewEncoder(conn)
 	decoder := NewDecoder(conn)

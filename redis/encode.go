@@ -19,6 +19,7 @@ type Encoder struct {
 	scratch [64]byte
 }
 
+// NewEncoder creates a RESP encoder to the specified writer source.
 func NewEncoder(writer io.Writer) (result *Encoder) {
 	result = &Encoder{
 		writer: bufio.NewWriter(writer),
@@ -124,7 +125,6 @@ func (encoder *Encoder) put(cmd string, args []interface{}) (err error) {
 }
 
 // Encode writes the specified command and arguments.
-// The Redis command reference (http://redis.io/commands) lists the available commands.
 func (encoder *Encoder) Encode(command string, args ...interface{}) (err error) {
 	err = encoder.put(command, args)
 	if err != nil {
@@ -135,10 +135,12 @@ func (encoder *Encoder) Encode(command string, args ...interface{}) (err error) 
 	return
 }
 
+// Marshaler is implemented by objects that want to marshal their Redis representation.
 type Marshaler interface {
 	MarshalREDIS() ([]byte, error)
 }
 
+// Marshal encodes the command and arguments.
 func Marshal(command string, args ...interface{}) (result []byte, err error) {
 	buffer := &bytes.Buffer{}
 	err = NewEncoder(buffer).Encode(command, args...)

@@ -3,6 +3,7 @@
 package redis
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -14,16 +15,17 @@ import (
 	"time"
 )
 
-// DB controls a Redis database instance.
+// DB defines a local Redis database instance.
 type DB struct {
 	cmd *exec.Cmd
 	dir string
 	ipc string
+	end chan struct{}
 }
 
 // New creates a local Redis database instance.
 // Communication is done via a unix socket.
-// Set "port" to "0" in the config to avoid conflicts with allocated ports.
+// Set "port" to "0" in the config to avoid conflicts with allocated ports when needed.
 func New(path string, config map[string]string) (result *DB, err error) {
 	dir, err := ioutil.TempDir("", "redis")
 	if err != nil {
@@ -46,10 +48,30 @@ func New(path string, config map[string]string) (result *DB, err error) {
 		cmd: cmd,
 		dir: dir,
 		ipc: ipc,
+		end: make(chan struct{}),
 	}
 
 	defer func() {
 		db.Close()
+	}()
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return
+	}
+
+	end := db.end
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			log.Printf(scanner.Text())
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.Printf("error while running '%s': %s\n", path, err)
+		}
+
+		close(end)
 	}()
 
 	stdin, err := cmd.StdinPipe()
@@ -79,10 +101,7 @@ func New(path string, config map[string]string) (result *DB, err error) {
 		time.Sleep(time.Millisecond * 10)
 	}
 
-	conn, err := db.Dial()
-	if err != nil {
-		return
-	}
+	conn := db.Dial()
 
 	reply, err := conn.Do("QUIT")
 	if err != nil {
@@ -90,6 +109,7 @@ func New(path string, config map[string]string) (result *DB, err error) {
 	}
 
 	if reply != OK {
+		err = fmt.Errorf("failed to start Redis instance")
 		return
 	}
 
@@ -118,12 +138,10 @@ func (db *DB) dial() (net.Conn, error) {
 }
 
 // Dial connects directly to the Redis database instance.
-func (db *DB) Dial() (result *Conn, err error) {
-	result = &Conn{
+func (db *DB) Dial() *Conn {
+	return &Conn{
 		db: db,
 	}
-
-	return
 }
 
 // Close terminates the Redis database instance and removes any temporary data that was created.
@@ -136,6 +154,8 @@ func (db *DB) Close() {
 		if err := db.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 			panic(err)
 		}
+
+		<-db.end
 
 		if err := db.cmd.Wait(); err != nil {
 			exit, ok := err.(*exec.ExitError)
