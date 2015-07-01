@@ -145,7 +145,7 @@ func (cluster *Cluster) Dial() (result *Client) {
 	}
 
 	for i := 0; i < n; i++ {
-		result.Address[i] = fmt.Sprintf("127.0.0.1:%d", cluster.base+i)
+		result.Address[i] = fmt.Sprintf("tcp://127.0.0.1:%d", cluster.base+i)
 	}
 
 	return

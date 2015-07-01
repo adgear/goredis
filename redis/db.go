@@ -144,6 +144,11 @@ func (db *DB) Dial() *Conn {
 	}
 }
 
+// URL returns a network/address pair encoded as scheme://host where scheme is the network and host is the address.
+func (db *DB) URL() string {
+	return "unix://" + db.ipc
+}
+
 // Close terminates the Redis database instance and removes any temporary data that was created.
 func (db *DB) Close() {
 	if db == nil {

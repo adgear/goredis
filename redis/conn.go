@@ -213,25 +213,43 @@ func (conn *Conn) Send(request *Request) error {
 }
 
 func (conn *Conn) connect() (result net.Conn, err error) {
-	result, err = conn.db.dial()
+	c, err := conn.db.dial()
 	if err != nil {
 		return
 	}
 
-	// load scripts
-	for key, code := range conn.lua {
-		var reply interface{}
-		reply, err = conn.Do("SCRIPT", "LOAD", code)
-		if err != nil {
-			return
+	// load lua scripts when needed
+	n := len(conn.lua)
+	if n != 0 {
+		ids := make([]string, 0, n)
+
+		// work directly on the stream to bypass everything
+		encoder := NewEncoder(c)
+		decoder := NewDecoder(c)
+
+		// send all scripts commands at once
+		for key, code := range conn.lua {
+			encoder.Encode("SCRIPT", "LOAD", code)
+			ids = append(ids, key)
 		}
 
-		id := reply.(string)
-		if id != key {
-			err = fmt.Errorf("script SHA1 doesn't match '%s' vs. '%s'", id, key)
+		// wait for the result of each command
+		for i := 0; i < n; i++ {
+			var reply interface{}
+			reply, err = decoder.Decode()
+			if err != nil {
+				return
+			}
+
+			id := string(reply.([]byte))
+			if id != ids[i] {
+				err = fmt.Errorf("script SHA1 doesn't match '%s' vs. '%s'", ids[i], id)
+				return
+			}
 		}
 	}
 
+	result = c
 	return
 }
 

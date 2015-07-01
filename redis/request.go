@@ -81,7 +81,7 @@ func (request *Request) decode(decoder *Decoder) (err error) {
 
 			request.redirect = request.moved || strings.HasPrefix(result, "ASK")
 			if request.redirect {
-				request.address = result[strings.LastIndex(result, " ")+1:]
+				request.address = "tcp://" + result[strings.LastIndex(result, " ")+1:]
 			}
 		}
 	}
@@ -113,7 +113,12 @@ func (request *Request) Result(i int) (interface{}, error) {
 
 func (request *Request) slot() int {
 	if request.key == nil {
-		request.key = []byte(request.commands[0].args[0].(string))
+		if request.commands[0].name == "EVALSHA" {
+			request.key = []byte(request.commands[0].args[2].(string))
+		} else {
+			request.key = []byte(request.commands[0].args[1].(string))
+		}
+
 		request.hash = slot(request.key)
 	}
 

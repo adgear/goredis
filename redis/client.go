@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,7 +52,7 @@ func (client *Client) initialize() {
 	// by default it will try to connect to the local Redis
 	address := client.Address
 	if len(address) == 0 {
-		address = []string{"localhost:6379"}
+		address = []string{"tcp://127.0.0.1:6379"}
 	}
 
 	client.nodes = make(map[string]*Conn)
@@ -156,6 +157,17 @@ func (client *Client) Send(request *Request) (err error) {
 
 // LuaScript loads a script into the script cache.
 func (client *Client) LuaScript(code string) (id string, err error) {
+	value := client.state.Load()
+	if value == nil {
+		client.once.Do(client.initialize)
+		value = client.state.Load()
+	}
+
+	state := value.(*mapping)
+	if state.closed {
+		log.Panicf("client closed")
+	}
+
 	client.mu.Lock()
 	defer client.mu.Unlock()
 
@@ -190,8 +202,16 @@ func (client *Client) LuaScript(code string) (id string, err error) {
 
 	if id != "" {
 		err = nil
+	} else {
+		err = fmt.Errorf("failed to get SHA1 from connections")
 	}
 
+	// remember this script for new connections
+	if client.lua == nil {
+		client.lua = make(map[string]string)
+	}
+
+	client.lua[id] = code
 	return
 }
 
@@ -226,7 +246,12 @@ func (client *Client) connect(address string) *Conn {
 		MaximumConnectionRetries:  client.MaximumConnectionRetries,
 		RetryTimeout:              client.RetryTimeout,
 		db: dialerFunc(func() (net.Conn, error) {
-			return net.Dial("tcp", address)
+			u, err := url.Parse(address)
+			if err != nil {
+				return nil, err
+			}
+
+			return net.Dial(u.Scheme, u.Host+u.Path)
 		}),
 		lua: lua,
 	}
@@ -337,7 +362,7 @@ func (client *Client) reconfigure(last *mapping, node *Conn) (next *mapping, err
 		m := item[2].([]interface{})
 		addr := string(m[0].([]byte))
 		port := m[1].(int64)
-		name := fmt.Sprintf("%s:%d", addr, port)
+		name := fmt.Sprintf("tcp://%s:%d", addr, port)
 
 		conn, ok := next.nodes[name]
 		if !ok {
