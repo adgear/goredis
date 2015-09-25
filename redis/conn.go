@@ -122,14 +122,21 @@ func (conn *Conn) process() {
 				if err != nil {
 					if fd != nil {
 						fd.Close()
+						encoder = nil
+						decoder = nil
 					}
 
-					n++
-					time.Sleep(time.Duration(int64(n) * int64(timeout)))
+					if n != 0 {
+						time.Sleep(time.Duration(int64(n) * int64(timeout)))
+					}
+
 					fd, err = conn.connect()
+					n++
 					c.err = err
 					continue
 				}
+
+				c.err = nil
 
 				if decoder == nil {
 					decoder = NewDecoder(fd)
