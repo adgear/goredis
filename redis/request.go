@@ -105,6 +105,20 @@ func (request *Request) Send(s Sender) error {
 	return s.Send(request)
 }
 
+func (request *Request) Key(i int) string {
+	c := &request.commands[i]
+
+	if c.name == "EVALSHA" {
+		return c.args[2].(string)
+	}
+
+	return c.args[1].(string)
+}
+
+func (request *Request) Args(i int) []interface{} {
+	return request.commands[i].args
+}
+
 // Result returns the reply and/or the error received.
 func (request *Request) Result(i int) (interface{}, error) {
 	r := &request.commands[i]
@@ -113,12 +127,7 @@ func (request *Request) Result(i int) (interface{}, error) {
 
 func (request *Request) slot() int {
 	if request.key == nil {
-		if request.commands[0].name == "EVALSHA" {
-			request.key = []byte(request.commands[0].args[2].(string))
-		} else {
-			request.key = []byte(request.commands[0].args[1].(string))
-		}
-
+		request.key = []byte(request.Key(0))
 		request.hash = slot(request.key)
 	}
 
