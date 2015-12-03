@@ -112,7 +112,7 @@ func (request *Request) Key(i int) string {
 		return c.args[2].(string)
 	}
 
-	return c.args[1].(string)
+	return c.args[0].(string)
 }
 
 func (request *Request) Args(i int) []interface{} {
