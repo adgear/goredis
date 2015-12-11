@@ -192,13 +192,15 @@ func (client *Client) LuaScript(code string) (id string, err error) {
 		f := <-done
 		var result interface{}
 		result, err = f()
-		if err == nil {
-			key := result.(string)
-			if id == "" || id == key {
-				id = key
-			} else {
-				err = fmt.Errorf("script SHA1 doesn't match '%s' vs. '%s'", id, key)
-			}
+		if err != nil {
+			return
+		}
+
+		key := result.(string)
+		if id == "" || id == key {
+			id = key
+		} else {
+			err = fmt.Errorf("script SHA1 doesn't match '%s' vs. '%s'", id, key)
 		}
 	}
 

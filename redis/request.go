@@ -2,7 +2,10 @@
 
 package redis
 
-import "strings"
+import (
+	"log"
+	"strings"
+)
 
 type command struct {
 	name   string
@@ -109,10 +112,20 @@ func (request *Request) Key(i int) string {
 	c := &request.commands[i]
 
 	if c.name == "EVALSHA" {
-		return c.args[2].(string)
+		r, ok := c.args[2].(string)
+		if !ok {
+			log.Fatalln("expecting string", c.args)
+		}
+
+		return r
 	}
 
-	return c.args[0].(string)
+	r, ok := c.args[0].(string)
+	if !ok {
+		log.Fatalln("expecting string", c.args[0])
+	}
+
+	return r
 }
 
 func (request *Request) Args(i int) []interface{} {
