@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/datacratic/goblueprint/blueprint"
 )
 
 // DefaultMaximumRedirections defines the default maximum number of times a request can be redirected to another node before failing.
@@ -387,4 +389,8 @@ func (client *Client) reconfigure(last *mapping, node *Conn) (next *mapping, err
 
 	client.state.Store(next)
 	return
+}
+
+func init() {
+	blueprint.Register(Client{})
 }
