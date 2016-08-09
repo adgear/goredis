@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -11,12 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/datacratic/go-metrics"
+	"github.com/datacratic/gometrics/metric"
+	"github.com/datacratic/gometrics/trace"
 	"github.com/datacratic/goredis/redis"
+	"golang.org/x/net/context"
 )
 
 func main() {
-
 	fmt.Println(len(os.Args), os.Args)
 
 	graphiteAddress := flag.String("graphite", "", "address of the graphite to send metrics to")
@@ -36,6 +36,17 @@ func main() {
 		panic("Provide a prefix for graphite keys")
 	}
 
+	t := &trace.Periodic{
+		Period: 10 * time.Second,
+		Handler: &trace.Metrics{
+			Prefix: "redis",
+			Reporter: &metric.Carbon{
+				URLs:   []string{"tcp://" + *graphiteAddress},
+				Prefix: *graphitePrefix,
+			},
+		},
+	}
+
 	keyAddressPairs := map[string]string{}
 	connections := map[string]*redis.Conn{}
 
@@ -53,20 +64,12 @@ func main() {
 		}
 	}
 
-	registry := metrics.NewRegistry()
-
 	last_used_cpu := map[string]map[string]float64{}
 	for key, _ := range connections {
 		last_used_cpu[key] = map[string]float64{}
-
-		metrics.NewRegisteredGaugeFloat64(key+".used_cpu_sys", registry)
-		metrics.NewRegisteredGaugeFloat64(key+".used_cpu_user", registry)
-		metrics.NewRegisteredGauge(key+".used_memory", registry)
-		metrics.NewRegisteredGauge(key+".connected_clients", registry)
-		metrics.NewRegisteredGauge(key+".instantaneous_ops_per_sec", registry)
 	}
 
-	doMonitor := func() {
+	doMonitor := func(ctx context.Context) {
 		for key, conn := range connections {
 			info, err := conn.Do("INFO")
 			if err != nil {
@@ -88,9 +91,7 @@ func main() {
 					}
 					diff := i - last_used_cpu[key]["used_cpu_sys"]
 					last_used_cpu[key]["used_cpu_sys"] = i
-					if gauge, ok := registry.Get(key + ".used_cpu_sys").(metrics.GaugeFloat64); ok {
-						gauge.Update(diff)
-					}
+					trace.Set(ctx, key+".used_cpu_sys", diff)
 				case "used_cpu_user":
 					i, err := strconv.ParseFloat(split[1], 64)
 					if err != nil {
@@ -99,71 +100,49 @@ func main() {
 					}
 					diff := i - last_used_cpu[key]["used_cpu_user"]
 					last_used_cpu[key]["used_cpu_user"] = i
-					if gauge, ok := registry.Get(key + ".used_cpu_user").(metrics.GaugeFloat64); ok {
-						gauge.Update(diff)
-					}
+					trace.Set(ctx, key+".used_cpu_user", diff)
 				case "used_memory":
 					i, err := strconv.ParseInt(split[1], 10, 64)
 					if err != nil {
 						fmt.Println("error parse int: " + err.Error())
 						break
 					}
-					if gauge, ok := registry.Get(key + ".used_memory").(metrics.Gauge); ok {
-						gauge.Update(i)
-					}
+					trace.Set(ctx, key+".used_memory", i)
 				case "connected_clients":
 					i, err := strconv.ParseInt(split[1], 10, 64)
 					if err != nil {
 						fmt.Println("error parse int: " + err.Error())
 						break
 					}
-					if gauge, ok := registry.Get(key + ".connected_clients").(metrics.Gauge); ok {
-						gauge.Update(i)
-					}
+					trace.Set(ctx, key+".connected_clients", i)
 				case "instantaneous_ops_per_sec":
 					i, err := strconv.ParseInt(split[1], 10, 64)
 					if err != nil {
 						fmt.Println("error parse int: " + err.Error())
 						break
 					}
-					if gauge, ok := registry.Get(key + ".instantaneous_ops_per_sec").(metrics.Gauge); ok {
-						gauge.Update(i)
-					}
+					trace.Set(ctx, key+".instantaneous_ops_per_sec", i)
 				}
 			}
 		}
 	}
 
-	addr, _ := net.ResolveTCPAddr("tcp", *graphiteAddress)
-	fmt.Println("graphite address:", addr)
-	go metrics.Graphite(registry, 1*time.Second, *graphitePrefix, addr)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
-
-	tickC := time.NewTicker(time.Second * 1).C
-
-	metrics.NewRegisteredGauge("latency_micro_sec", registry)
+	tick := time.NewTicker(time.Second * 1).C
 
 	for {
 		select {
-		case <-tickC:
-			//fmt.Println(time.Now())
-			startTime := time.Now().UnixNano()
-			doMonitor()
-			endTime := time.Now().UnixNano()
-			elapsed := endTime - startTime
-			if gauge, ok := registry.Get("latency_micro_sec").(metrics.Gauge); ok {
-				gauge.Update(int64(elapsed / 1000))
-			}
-		case sig := <-sigChan:
-			fmt.Println("shutting down", sig)
-			os.Exit(0)
+		case <-tick:
+			c := trace.Start(trace.SetHandler(context.Background(), t), "monitor", "")
+			doMonitor(c)
+
+			trace.Leave(c, "latency_micro_sec")
+		case <-sig:
 			break
 		}
 	}
+
+	fmt.Println("shutting down")
 }
