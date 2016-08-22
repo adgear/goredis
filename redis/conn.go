@@ -4,6 +4,7 @@ package redis
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -16,7 +17,7 @@ var DefaultMaximumConcurrentRequests = 1000
 var DefaultMaximumPendingRequests = 1000
 
 // DefaultMaximumConnectionRetries defines the number of times the client will try to connect to the Redis database before giving up.
-var DefaultMaximumConnectionRetries = 3
+var DefaultMaximumConnectionRetries = 8
 
 // DefaultRetryTimeout defines the duration multiplicatively increased to provide exponential backoff delay when connecting to the Redis database.
 var DefaultRetryTimeout = time.Second
@@ -128,9 +129,13 @@ func (conn *Conn) process() {
 
 					if n != 0 {
 						time.Sleep(time.Duration(int64(n) * int64(timeout)))
+						log.Println("retry connect", n)
 					}
 
 					fd, err = conn.connect()
+					if err != nil {
+						log.Println("connection error:", err)
+					}
 					n++
 					c.err = err
 					continue
@@ -162,6 +167,7 @@ func (conn *Conn) process() {
 					conn.feed <- nil
 				}()
 
+				panic("fail to reconnect")
 				break
 			}
 		}
